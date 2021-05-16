@@ -18,6 +18,7 @@ mod tests {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     SerializationError,
     DeserializationError,
