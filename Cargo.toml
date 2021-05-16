@@ -14,4 +14,5 @@ serde = "1.0"
 
 rustls = "0.19.1"
 tokio = { version = "1.5.0", features = ["full"] }
+tokio-rustls = "0.22.0"
 webpki = "0.21.0"

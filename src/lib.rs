@@ -6,9 +6,10 @@ use std::{
     sync::Arc,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
 };
+use tokio_rustls::TlsStream;
 
 #[cfg(test)]
 mod tests {
@@ -23,24 +24,25 @@ pub enum Error {
     SerializationError,
     DeserializationError,
     TlsError,
-    TcpError,
 }
 
 pub struct TlsConnection<T> {
-    session: T,
-    tcp_stream: TcpStream,
+    session: TlsStream<T>,
 }
 
-impl<T: Session> TlsConnection<T> {
-    pub fn new(session: T, tcp_stream: TcpStream) -> TlsConnection<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> TlsConnection<T> {
+    pub fn new(session: TlsStream<T>) -> TlsConnection<T> {
         TlsConnection {
             session,
-            tcp_stream,
         }
     }
 
-    pub fn session(&self) -> &T {
-        &self.session
+    pub fn session(&self) -> (&T, &dyn Session) {
+        self.session.get_ref()
+    }
+
+    pub fn session_mut(&mut self) -> (&mut T, &mut dyn Session) {
+		self.session.get_mut()
     }
 
     pub async fn send_message<U: serde::Serialize + std::fmt::Debug>(
@@ -55,29 +57,9 @@ impl<T: Session> TlsConnection<T> {
             }
         };
 
-        let mut buffer = Vec::new();
-
-        if let Err(e) = self.session.write(&serialized_msg) {
+        if let Err(e) = self.session.write(&serialized_msg).await {
             tracing::error!("Error writing message {:?} to ServerSession: {:?}", msg, e);
             return Err(Error::TlsError);
-        };
-
-        if let Err(e) = self.session.write_tls(&mut buffer) {
-            tracing::error!(
-                "Error encoding message {:?} with ServerSession: {:?}",
-                msg,
-                e
-            );
-            return Err(Error::TlsError);
-        }
-
-        if let Err(e) = self.tcp_stream.write(&buffer).await {
-            tracing::error!(
-                "Error sending encoded message {:?} through TCP stream: {:?}",
-                msg,
-                e
-            );
-            return Err(Error::TcpError);
         };
 
         Ok(())
@@ -86,48 +68,33 @@ impl<T: Session> TlsConnection<T> {
     pub async fn read_message<U: serde::de::DeserializeOwned + std::fmt::Debug>(
         &mut self,
     ) -> Result<Option<U>, Error> {
-        let mut buffer = Vec::new();
+		let out;
+      	
+       	loop {
+			let mut buffer = Vec::with_capacity(4096);
+			match self.session.read_buf(&mut buffer).await {
+				Err(e) => {
+					tracing::error!("Error reading TLS session: {:?}", e);
+					return Err(Error::TlsError);
+				},
+				Ok(0) => continue,
+				_ => {
+					out = buffer;
+					break;
+				},
+			};
+       	}
 
-        if let Err(e) = self.tcp_stream.read_buf(&mut buffer).await {
-            tracing::error!(
-                "Error receiving encoded messsage through TCP stream: {:?}",
-                e
-            );
-            return Err(Error::TcpError);
-        }
-
-        if let Err(e) = self.session.read_tls(&mut buffer.as_slice()) {
-            tracing::error!("Error reading message with ServerSession: {:?}", e);
-            return Err(Error::TlsError);
-        }
-
-        if let Err(e) = self.session.process_new_packets() {
-            tracing::error!("Error decoding message with ServerSession: {:?}", e);
-            return Err(Error::TlsError);
-        }
-
-        if self.session.is_handshaking() {
-            return Ok(None);
-        }
-
-        let mut buffer = Vec::new();
-
-        if let Err(e) = self.session.read_to_end(&mut buffer) {
-            tracing::error!(
-                "Error reading message from ServerSession to buffer: {:?}",
-                e
-            );
-            return Err(Error::TlsError);
-        }
-
-        let out = match bincode::deserialize::<U>(&mut buffer) {
+       let out = match bincode::deserialize::<U>(&out) {
             Ok(deserialized) => deserialized,
             Err(e) => {
                 tracing::error!("Error deserializing message: {:?}", e);
                 return Err(Error::DeserializationError);
             }
         };
+        tracing::trace!("Deserialized message: {:?}", &out);
 
         Ok(Some(out))
     }
 }
+
