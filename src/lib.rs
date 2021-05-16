@@ -31,9 +31,9 @@ pub struct TlsConnection<T> {
 }
 
 impl<T: AsyncRead + AsyncWrite + Unpin> TlsConnection<T> {
-    pub fn new(session: TlsStream<T>) -> TlsConnection<T> {
+    pub fn new(session: impl Into<TlsStream<T>>) -> TlsConnection<T> {
         TlsConnection {
-            session,
+            session: session.into(),
         }
     }
 
