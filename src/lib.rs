@@ -85,7 +85,6 @@ impl<T: Session> TlsConnection<T> {
 
     pub async fn read_message<U: serde::de::DeserializeOwned + std::fmt::Debug + Clone>(
         &mut self,
-        msg: &[u8],
     ) -> Result<Option<U>, Error> {
         let mut buffer = Vec::new();
 
