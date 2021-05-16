@@ -67,7 +67,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> TlsConnection<T> {
 
     pub async fn read_message<U: serde::de::DeserializeOwned + std::fmt::Debug>(
         &mut self,
-    ) -> Result<Option<U>, Error> {
+    ) -> Result<U, Error> {
 		let out;
       	
        	loop {
@@ -94,7 +94,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> TlsConnection<T> {
         };
         tracing::trace!("Deserialized message: {:?}", &out);
 
-        Ok(Some(out))
+        Ok(out)
     }
 }
 
