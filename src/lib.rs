@@ -31,18 +31,18 @@ pub struct TlsConnection<T> {
 }
 
 impl<T: Session> TlsConnection<T> {
-    fn new(session: T, tcp_stream: TcpStream) -> TlsConnection<T> {
+    pub fn new(session: T, tcp_stream: TcpStream) -> TlsConnection<T> {
         TlsConnection {
             session,
             tcp_stream,
         }
     }
 
-    fn session(&self) -> &T {
+    pub fn session(&self) -> &T {
         &self.session
     }
 
-    async fn send_message<U: serde::Serialize + std::fmt::Debug>(
+    pub async fn send_message<U: serde::Serialize + std::fmt::Debug>(
         &mut self,
         msg: &U,
     ) -> Result<(), Error> {
@@ -82,7 +82,7 @@ impl<T: Session> TlsConnection<T> {
         Ok(())
     }
 
-    async fn read_message<U: serde::de::DeserializeOwned + std::fmt::Debug + Clone>(
+    pub async fn read_message<U: serde::de::DeserializeOwned + std::fmt::Debug + Clone>(
         &mut self,
         msg: &[u8],
     ) -> Result<Option<U>, Error> {
