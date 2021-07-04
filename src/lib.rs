@@ -1,3 +1,4 @@
+use anyhow::Result;
 use rustls::{ClientConfig, ClientSession, ServerConfig, ServerSession, Session};
 use std::{
     io::{Read, Write},
@@ -11,20 +12,6 @@ use tokio::{
 };
 use tokio_rustls::TlsStream;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Error {
-    SerializationError,
-    DeserializationError,
-    TlsError,
-}
 
 pub struct TlsConnection<T> {
     session: TlsStream<T>,
@@ -48,51 +35,31 @@ impl<T: AsyncRead + AsyncWrite + Unpin> TlsConnection<T> {
     pub async fn send_message<U: serde::Serialize + std::fmt::Debug>(
         &mut self,
         msg: &U,
-    ) -> Result<(), Error> {
-        let serialized_msg = match bincode::serialize(msg) {
-            Ok(msg) => msg,
-            Err(e) => {
-                tracing::error!("Error serialzing message {:?}: {:?}", msg, e);
-                return Err(Error::SerializationError);
-            }
-        };
-
-        if let Err(e) = self.session.write(&serialized_msg).await {
-            tracing::error!("Error writing message {:?} to ServerSession: {:?}", msg, e);
-            return Err(Error::TlsError);
-        };
+    ) -> Result<()> {
+        let serialized_msg = bincode::serialize(msg)?;
+        self.session.write(&serialized_msg).await?;
 
         Ok(())
     }
 
     pub async fn read_message<U: serde::de::DeserializeOwned + std::fmt::Debug>(
         &mut self,
-    ) -> Result<U, Error> {
+    ) -> Result<U> {
 		let out;
       	
        	loop {
 			let mut buffer = Vec::with_capacity(4096);
-			match self.session.read_buf(&mut buffer).await {
-				Err(e) => {
-					tracing::error!("Error reading TLS session: {:?}", e);
-					return Err(Error::TlsError);
-				},
-				Ok(0) => continue,
+			match self.session.read_buf(&mut buffer).await? {
+				0 => continue,
 				_ => {
 					out = buffer;
 					break;
 				},
 			};
-       	}
+       }
 
-       let out = match bincode::deserialize::<U>(&out) {
-            Ok(deserialized) => deserialized,
-            Err(e) => {
-                tracing::error!("Error deserializing message: {:?}", e);
-                return Err(Error::DeserializationError);
-            }
-        };
-        tracing::trace!("Deserialized message: {:?}", &out);
+       let out = bincode::deserialize::<U>(&out)?;
+       tracing::trace!("Deserialized message: {:?}", &out);
 
         Ok(out)
     }
