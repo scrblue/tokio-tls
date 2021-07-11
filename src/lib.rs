@@ -50,7 +50,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> TlsConnection<T> {
        	loop {
 			let mut buffer = Vec::with_capacity(4096);
 			match self.session.read_buf(&mut buffer).await? {
-				0 => continue,
+				0 => {
+    				anyhow::bail!("Reader closed");
+					let _ = tokio::task::yield_now().await;
+					break;
+				},
 				_ => {
 					out = buffer;
 					break;
